@@ -38,9 +38,10 @@ int main(int argc, char** args){
     FILE *pfile = fopen(file_name, "rb");
     if (!pfile) {perror("fopen"); return 1;}
 
-    // pointers for supported extensions
+    // pointers to supported extensions
     format_ppm *ppm;
     format_pbm *pbm;
+    format_tga *tga;
 
     // checking SDL components
     if (SDL_Init(SDL_INIT_EVERYTHING) < 0){
@@ -62,6 +63,14 @@ int main(int argc, char** args){
 
         // creating SDL window for pbm
         pwindow = SDL_CreateWindow("Image Viewer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, pbm->width, pbm->height, SDL_WINDOW_SHOWN);
+
+    }
+    else if(!strcmp("tga", extension)){
+        tga = read_tga(pfile);
+        if (!tga){ perror("failed to load pbm"); return 1;}
+
+        // creating SDL window for tga
+        pwindow = SDL_CreateWindow("Image Viewer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, tga->width, tga->height, SDL_WINDOW_SHOWN);
 
     }
     else{
@@ -101,6 +110,10 @@ int main(int argc, char** args){
         SDL_RenderSetLogicalSize(prenderer, pbm->width, pbm->height);
         show_pbm(pbm, prenderer);
     }
+    else if(!strcmp("tga", extension)){
+        SDL_RenderSetLogicalSize(prenderer, tga->width, tga->height);
+        show_tga(tga, prenderer);
+    }
     bool running = true;
     while(running){
         while(SDL_PollEvent( &event )){
@@ -108,9 +121,9 @@ int main(int argc, char** args){
             {
             case SDL_QUIT:
                 if(!strcmp("ppm", extension))
-                    free_ppm(ppm);
+                    free(ppm->pixels);
                 else if(!strcmp("pbm", extension))
-                    free_pbm(pbm);
+                    free(pbm->bits);
                 running = false;
                 break;
             case SDL_WINDOWEVENT:
@@ -127,6 +140,10 @@ int main(int argc, char** args){
     }
 
 
+    // free formats
+    free(ppm);
+    free(pbm);
+    free(tga);
 
     // quitting the program
     fclose(pfile);

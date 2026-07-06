@@ -34,10 +34,6 @@ void show_ppm(format_ppm *ppm, SDL_Renderer *renderer){
     SDL_RenderPresent(renderer);
 }
 
-void free_ppm(format_ppm *ppm){
-    free(ppm->pixels);
-    free(ppm);
-}
 
 
 format_pbm *read_pbm(FILE *file){
@@ -45,36 +41,128 @@ format_pbm *read_pbm(FILE *file){
 
     fscanf(file, "%s", output->magic);
     fscanf(file, "%d %d", &output->width, &output->height);
-    output->bits = malloc((output->height * output->width) * sizeof(Uint8));
 
     if(output->magic[1] == '1'){
+        output->bits = malloc((output->height * output->width) * sizeof(Uint8));
         for(int j = 0; j < output->height; j++){
             for(int i = 0; i < output->width; i++){
                 fscanf(file , " %c", &output->bits[j * output->width + i]);
             }
         }
     }
-    else;
+    else{
+        output->bits = malloc((output->height * output->width) * sizeof(Uint8));
+        fgetc(file);
+        for(int j = 0; j < output->height; j++){
+            for(int i = 0; i < (output->width + 7)/8; i++){
+                char byte = fgetc(file);
+                for(int k = 0; k < 8; k++){
+                    if(j * output->width + i*8 + k < output->height * output->width)
+                        output->bits[j * output->width + i*8 + k] = ((byte >> (7 - k))  & 1) + '0';
+                    else
+                        break;
+                }
+            }
+        }
+    }
     
     return output;
 }
 
 void show_pbm(format_pbm *pbm, SDL_Renderer *renderer){
-    if(pbm->magic[1] == '1'){
-        for(int j = 0; j < pbm->height; j++){
-            for(int i = 0; i < pbm->width; i++){
-                Uint8 color = (pbm->bits[j * pbm->width + i] == '1') ? 0x00 : 0xFF; 
-                SDL_SetRenderDrawColor(renderer, color, color, color, 255);
-                SDL_RenderDrawPoint(renderer, i, j);
-            }
+    for(int j = 0; j < pbm->height; j++){
+        for(int i = 0; i < pbm->width; i++){
+            Uint8 color = (pbm->bits[j * pbm->width + i] == '1') ? 0x00 : 0xFF; 
+            SDL_SetRenderDrawColor(renderer, color, color, color, 0xFF);
+            SDL_RenderDrawPoint(renderer, i, j);
         }
     }
-    else;
 
     SDL_RenderPresent(renderer);
 }
 
-void free_pbm(format_pbm *pbm){
-    free(pbm->bits);
-    free(pbm);
+format_tga *read_tga(FILE *file){
+    format_tga *output = malloc(sizeof(format_tga));
+
+
+    // read header (field 1 -> 5)
+    output->id_length = fgetc(file);
+
+    output->color_map_type = fgetc(file);
+
+    output->image_type = fgetc(file);
+
+    fread(&output->first_entry_idx, sizeof(Uint16), 1, file);
+    fread(&output->color_map_length, sizeof(Uint16), 1, file);
+    output->color_map_entry_size = fgetc(file);
+
+
+    fread(&output->x_origin, sizeof(Uint16), 1, file);
+    fread(&output->y_origin, sizeof(Uint16), 1, file);
+    fread(&output->width, sizeof(Uint16), 1, file);
+    fread(&output->height, sizeof(Uint16), 1, file);
+    output->pixel_depth = fgetc(file);
+    output->image_descriptor = fgetc(file);
+
+    // read image map data (field 6 -> 8)
+    if(output->id_length > 0){
+        output->image_id = malloc(output->id_length);
+        fread(output->image_id, sizeof(Uint8), output->id_length, file);
+    }
+    else
+        output->image_id = NULL;
+
+    if(output->color_map_type > 0){
+        size_t size = (output->color_map_entry_size + 7)/8 * output->color_map_length;
+        output->color_map_data = malloc(size);
+        for(size_t i = 0; i < size; i++){
+            output->color_map_data[i] = fgetc(file);
+        }
+    }
+    else
+        output->color_map_data = NULL;
+
+    {
+        size_t size = output->width * output->height * (output->pixel_depth / 8);
+        output->pixels = malloc(size);
+        fread(output->pixels, sizeof(Uint8), size, file);
+    }
+
+
+    return output;
+}
+
+void show_tga(format_tga *tga, SDL_Renderer *renderer){
+    if(tga->image_type == 0){
+        printf("No image data provided");
+        return;
+    }
+    else if(tga->image_type == 1){
+        printf("This format is not supported yet");
+        return;
+    }
+    else if(tga->image_type == 2){
+        int byte_depth = (tga->pixel_depth/8);
+        size_t size = tga->height * tga->width * byte_depth;
+
+        for(size_t i = 0; i < size; i+= byte_depth){
+            Uint8 b = tga->pixels[i], g = tga->pixels[i+1], r = tga->pixels[i+2];
+            SDL_SetRenderDrawColor(renderer, r, g, b, (byte_depth == 3) ? 0xFF : tga->pixels[i+3]);
+            SDL_RenderDrawPoint(renderer, (i / byte_depth) % tga->width, (i / byte_depth) / tga->width);
+        }
+    }
+    else if(tga->image_type == 3){
+        size_t size = tga->height * tga->width;
+        for(size_t i = 0; i < size; i++){
+            Uint8 br = tga->pixels[i];
+            SDL_SetRenderDrawColor(renderer, br, br, br, 0xFF);
+            SDL_RenderDrawPoint(renderer, i % tga->width, i / tga->width);
+        }
+    }
+    else if(tga->image_type >= 9){
+        printf("the RLE formats are not supported yet");
+        return;
+    }
+
+    SDL_RenderPresent(renderer);
 }
